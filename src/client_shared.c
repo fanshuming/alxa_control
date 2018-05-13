@@ -20,6 +20,7 @@ Contributors:
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #ifndef WIN32
 #include <unistd.h>
 #else
@@ -252,6 +253,12 @@ int client_config_load(struct mosq_config *cfg, int pub_or_sub, int argc, char *
 int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, char *argv[])
 {
 	int i;
+	char * systemMacTopicDestStr = NULL;
+	char * tokenTopicDestStr = NULL;
+	char * sofaTopicDestStr = NULL;
+        systemMacTopicDestStr = (char *)get_system_mac_topic();
+        tokenTopicDestStr = (char *)get_token_topic();
+        sofaTopicDestStr = (char *)get_sofa_topic();
 
 	for(i=1; i<argc; i++){
 		if(!strcmp(argv[i], "-p") || !strcmp(argv[i], "--port")){
@@ -528,6 +535,21 @@ int client_config_line_proc(struct mosq_config *cfg, int pub_or_sub, int argc, c
 				fprintf(stderr, "Error: -t argument given but no topic specified.\n\n");
 				return 1;
 			}else{
+				if(!strcmp(argv[i+1],"system"))
+				{
+					argv[i+1]=systemMacTopicDestStr;
+					printf("---------debug system topic:%s\n",argv[i+1]);
+				}else if(!strcmp(argv[i+1],"token"))
+				{
+					argv[i+1]=tokenTopicDestStr;
+					printf("---------debug token topic:%s\n",argv[i+1]);
+				}else if(!strcmp(argv[i+1],"emomo_sofa"))
+                                {
+                                        argv[i+1]=sofaTopicDestStr;
+                                        printf("---------debug sofa topic:%s\n",argv[i+1]);
+                                }
+
+
 				if(pub_or_sub == CLIENT_PUB){
 					if(mosquitto_pub_topic_check(argv[i+1]) == MOSQ_ERR_INVAL){
 						fprintf(stderr, "Error: Invalid publish topic '%s', does it contain '+' or '#'?\n", argv[i+1]);

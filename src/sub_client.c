@@ -30,6 +30,8 @@ Contributors:
 #include <mosquitto.h>
 #include "client_shared.h"
 
+#include "mqtt_protocol.h"
+#include "cJSON.h"
 #include "../include/spim.h"
 #include "ssap_protocol.h"
 #include "log.h"
@@ -41,14 +43,170 @@ int msg_count = 0;
 
 SSAPCmdResponseContext handle_response_context;
 
+void handle_system_msg(char *type, char *subtype)
+{
+	if(type != NULL) 
+	{
+		if(!strcmp(type, "2"))
+		{
+			 //net_configure
+			if((NULL != subtype) && (!strcmp(subtype, "ask"))) 
+			{
+				if(net_check())
+				{
+					send_net_connect_signal();
+				}
+			}
+		} else if(!strcmp(type, "1"))	
+		{ 
+			//system
+
+		}
+	}
+	else
+	{
+		return;
+	}
+}
+
+void handle_emomo_sofa(char *type, char *subtype, char *data)
+{
+	uint8_t sofa_send_nuber = -1;
+	if(NULL != type) 
+	{
+		LOGD("handle_emomo_sofa type=%s, subtype=%s\n", type, subtype);
+
+		if(!strcmp(type, "7")) {
+			//handle_sofa_cmd(data);
+			printf("handle_sofa_cmd!\n");
+		} 
+		else
+		 {
+			sofa_send_nuber = atoi(type);
+			if(sofa_send_nuber==1) {
+				sofa_send_nuber = 0;
+			} else {
+				sofa_send_nuber = (1<<(sofa_send_nuber-2));
+			}
+			LOGD("sofa_send_nuber=%d\n", sofa_send_nuber);
+			spim_send_command_data(&sofa_send_nuber, 1, SSPP_CMD_SOFA_COMMAND, SSAP_SEND_DATA_LENGTH);
+		}
+	}
+	else
+	{
+		return;
+	}
+}
+
+static uint8_t handle_sub_msg_payload(char *msg_topic, char *msg_payload)
+{
+	uint32_t ret = 0;
+	uint16_t payload_len = 0;
+	uint16_t msg_data_len = 0;
+	uint8_t mac_addr[32];
+
+	cJSON *sub_json_msg;
+	cJSON *sub_msg_device_sn;
+	cJSON *sub_msg_type;
+	cJSON *sub_msg_subtype;
+	cJSON *sub_msg_data;
+
+	
+	cJSON *sub_msg_mac;
+	cJSON *sub_msg_token;
+	cJSON *sub_msg_refreshToken;
+
+       char * systemDestStr = NULL;
+       char * tokenDestStr = NULL;
+       char * sofaDestStr = NULL;
+
+       systemDestStr = (char *)get_system_mac_topic();
+       tokenDestStr = (char *)get_token_topic();
+       sofaDestStr = (char *)get_sofa_topic();
+
+	printf("topic : %s payload : %s\n",msg_topic,msg_payload);
+
+       	if(!strcmp(msg_topic, sofaDestStr))
+	{
+	        sub_json_msg = cJSON_Parse(msg_payload);
+
+        	if(sub_json_msg != NULL) {
+                	sub_msg_device_sn = cJSON_GetObjectItem(sub_json_msg, "sn");
+                	sub_msg_type = cJSON_GetObjectItem(sub_json_msg, "type");
+                	sub_msg_subtype = cJSON_GetObjectItem(sub_json_msg, "subtype");
+                	sub_msg_data = cJSON_GetObjectItem(sub_json_msg, "parameter");
+        	}
+        	else
+       		{
+                	return 1;
+        	}
+
+		if((sub_msg_type != NULL) && (sub_msg_subtype != NULL))
+		{
+			handle_emomo_sofa((char*)sub_msg_type->valuestring, (char*)sub_msg_subtype->valuestring, (char*)sub_msg_data->valuestring);
+			
+		}
+
+	} else if (!strcmp(msg_topic, systemDestStr))
+        {
+	        sub_json_msg = cJSON_Parse(msg_payload);
+
+        	if(sub_json_msg != NULL) {
+                	sub_msg_device_sn = cJSON_GetObjectItem(sub_json_msg, "sn");
+                	sub_msg_type = cJSON_GetObjectItem(sub_json_msg, "type");
+                	sub_msg_subtype = cJSON_GetObjectItem(sub_json_msg, "subtype");
+                	sub_msg_data = cJSON_GetObjectItem(sub_json_msg, "parameter");
+        	}
+        	else
+       		{
+                	return 1;
+        	}
+
+		if((sub_msg_type != NULL) && (sub_msg_subtype != NULL))
+		{
+			handle_system_msg((char*)sub_msg_type->valuestring, (char*)sub_msg_subtype->valuestring);
+			
+		}
+
+        }else if(!strcmp(msg_topic, tokenDestStr))
+        {
+		sub_json_msg = cJSON_Parse(msg_payload);
+
+                if(sub_json_msg != NULL) {
+		//	char *char_json = "{\"token\":\"AVS|sadsdwsddddddddd\"}";
+    		//	cJSON *json = cJSON_Parse(char_json);
+
+    			char *buf = NULL;
+    			printf("%s\n",buf = cJSON_Print(sub_json_msg));
+    			FILE *fp = fopen("/etc/config/alexa.json","w");
+    			fwrite(buf,strlen(buf),1,fp);
+
+    			fclose(fp);
+    			free(buf);
+    			cJSON_Delete(sub_json_msg);
+
+                        //sub_msg_mac = cJSON_GetObjectItem(sub_json_msg, "mac");
+                        //sub_msg_token = cJSON_GetObjectItem(sub_json_msg, "token");
+                        //sub_msg_refreshToken = cJSON_GetObjectItem(sub_json_msg, "refreshToken");
+                }
+                else
+                {
+                        return 1;
+                }
+
+        }
+}
+
+
 void my_message_callback(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
 {
 	struct mosq_config *cfg;
 	int i;
 	bool res;
 	uint8_t ret = 0;
-	uint8_t sofa_send_nuber = 0;
+	uint8_t sofa_send_nuber = 9;
 
+	LOGD("msg playload = %s, payloadlen = %d\n", message->payload, message->payloadlen);
 	if(process_messages == false) return;
 
 	assert(obj);
@@ -61,8 +219,26 @@ void my_message_callback(struct mosquitto *mosq, void *obj, const struct mosquit
 			if(res) return;
 		}
 	}
-
-	if(strstr(message->payload,"open sofa"))
+	
+	if(strstr(message->payload,"stop sofa"))
+	{
+		sofa_send_nuber = 0;
+		printf("send cmd : stop sofa!\n");
+	}else if(strstr(message->payload,"reset sofa"))
+	{
+		sofa_send_nuber = 1;
+		printf("send cmd : reset sofa!\n");
+		
+	}else if(strstr(message->payload,"open sofa head"))
+	{
+		sofa_send_nuber = 8;
+		printf("send cmd : open sofa head!\n");
+	}else if(strstr(message->payload,"close sofa head"))
+	{
+		sofa_send_nuber = 16;
+		printf("send cmd : close sofa head!\n");
+	}
+	else if(strstr(message->payload,"open sofa"))
 	{
 		sofa_send_nuber = 2;
 		printf("send cmd : open sofa!\n");
@@ -72,6 +248,7 @@ void my_message_callback(struct mosquitto *mosq, void *obj, const struct mosquit
 		printf("send cmd : close sofa!\n");
 	}
 	
+	LOGD("msg playload = %s, payloadlen = %d\n", message->payload, message->payloadlen);
 	if(cfg->verbose){
 		if(message->payloadlen){
 			printf("%s ", message->topic);
@@ -81,12 +258,15 @@ void my_message_callback(struct mosquitto *mosq, void *obj, const struct mosquit
 			}
 			//send message by spi
 			//ret = spi_master_send_data(message->payload, strlen(message->payload));
-			if(sofa_send_nuber == 2 || sofa_send_nuber == 4)
+			if(sofa_send_nuber == 0 || sofa_send_nuber == 1 || sofa_send_nuber == 2 || sofa_send_nuber == 4 || sofa_send_nuber == 8 || sofa_send_nuber == 16)
 			{
 				
 				LOGD("send comd:%d\n",sofa_send_nuber);
 				handle_response_context=spim_send_command_data(&sofa_send_nuber, 1, SSPP_CMD_SOFA_COMMAND, SSAP_SEND_DATA_LENGTH);
 				LOGD("sofa command=%d,repose=%d\n", handle_response_context.command, handle_response_context.response);
+			}else{
+				LOGD("handle_sub_msg_payload v=1 topic:%s,payload:%s\n",message->topic, message->payload);
+				handle_sub_msg_payload(message->topic, message->payload);
 			}
 		}else{
 			if(cfg->eol){
@@ -103,11 +283,15 @@ void my_message_callback(struct mosquitto *mosq, void *obj, const struct mosquit
 			fflush(stdout);
 			//send message by spi
 			//ret = spi_master_send_data(message->payload, strlen(message->payload));
-			if(sofa_send_nuber == 2 || sofa_send_nuber == 4)
+			if(sofa_send_nuber == 0 || sofa_send_nuber == 1 || sofa_send_nuber == 2 || sofa_send_nuber == 4 || sofa_send_nuber == 8 || sofa_send_nuber == 16)
 			{
+				
 				LOGD("send comd:%d\n",sofa_send_nuber);
 				handle_response_context=spim_send_command_data(&sofa_send_nuber, 1, SSPP_CMD_SOFA_COMMAND, SSAP_SEND_DATA_LENGTH);
 				LOGD("sofa command=%d,repose=%d\n", handle_response_context.command, handle_response_context.response);
+			}else{
+				LOGD("handle_sub_msg_payload v=0 topic:%s,payload:%s\n",message->topic, message->payload);
+				handle_sub_msg_payload(message->topic, message->payload);
 			}
 		}
 	}
@@ -247,11 +431,33 @@ void print_usage(void)
 	printf("\nSee http://mosquitto.org/ for more information.\n\n");
 }
 
-int main(int argc, char *argv[])
+//int main(int argc, char *argv[])
+int main(void)
 {
 	struct mosq_config cfg;
 	struct mosquitto *mosq = NULL;
 	int rc;
+	int argc=16;
+	char *argv[] = {
+		"mosqutto_sub",
+		"-v",
+		"-t",
+		"control",
+		"-t",
+		"product_info",
+		"-t",
+		"system",
+		"-t",
+		"token",
+		"-t",
+		"umomoSofa",
+		"-t",
+		"emomo_sofa",
+		"-h",
+		"120.27.138.117"
+	};
+        
+	
 	
 	rc = client_config_load(&cfg, CLIENT_SUB, argc, argv);
 	if(rc){
@@ -298,7 +504,13 @@ int main(int argc, char *argv[])
 	mosquitto_message_callback_set(mosq, my_message_callback);
 
 	rc = client_connect(mosq, &cfg);
-	if(rc) return rc;
+	if(rc)
+	{
+		printf("failed rc:%d\n",rc);
+		return rc;	
+	}else{
+		printf(" success rc:%d\n",rc);
+	}
 
 
 	rc = mosquitto_loop_forever(mosq, -1, 1);

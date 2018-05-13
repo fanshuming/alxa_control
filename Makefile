@@ -12,7 +12,7 @@ LDFLAGS += -L/home/fanshuming/qz_proj/qz_mtk_openwrt/openwrt/build_dir/target-mi
 LDFLAGS += -L/home/fanshuming/qz_proj/qz_mtk_openwrt/openwrt/build_dir/target-mipsel_24kec+dsp_uClibc-0.9.33.2/openssl-1.0.2m  -lcrypto
 LDFLAGS += -L/home/fanshuming/qz_proj/qz_mtk_openwrt/openwrt/build_dir/target-mipsel_24kec+dsp_uClibc-0.9.33.2/mosquitto-ssl/mosquitto-1.4.10/lib -lmosquitto
 
-LDFLAGS += -lpthread
+LDFLAGS += -lpthread -lm
 
 CFLAGS = -I/home/fanshuming/qz_proj/qz_mtk_openwrt/openwrt/build_dir/target-mipsel_24kec+dsp_uClibc-0.9.33.2/mosquitto-ssl/mosquitto-1.4.10/lib -I./include
 CFLAGS += -lpthread -lcurl -lmsc -lasound -lm
@@ -20,11 +20,11 @@ CFLAGS += -lpthread -lcurl -lmsc -lasound -lm
 
 all : mosquitto_pub mosquitto_sub
 
-mosquitto_pub : src/pub_client.o src/client_shared.o src/spim.o
+mosquitto_pub : src/pub_client.o src/client_shared.o src/spim.o src/utils.o src/cJSON.o
 	#echo "${CROSS_COMPILE}${CC} $^ -o $@ ${LDFLAGS}"
 	${CROSS_COMPILE}${CC} $^ -o $@ ${LDFLAGS}
 
-mosquitto_sub : src/sub_client.o src/client_shared.o src/spim.o src/online_play.o src/crc.o src/ssap_protocol.o
+mosquitto_sub : src/sub_client.o src/client_shared.o src/spim.o src/online_play.o src/crc.o src/ssap_protocol.o src/utils.o src/cJSON.o src/pub_client_src.o
 	#echo "${CROSS_COMPILE}${CC} $^ -o $@ ${LDFLAGS}"
 	${CROSS_COMPILE}${CC} $^ -o $@ ${LDFLAGS}
 
@@ -34,7 +34,7 @@ pub_client.o : src/pub_client.c
 	echo "-------------------"
 	${CROSS_COMPILE}${CC} ${CFLAGS} -c $< -o $@
 
-sub_client.o : src/sub_client.c
+sub_client.o : src/sub_client.c  include/pub_client_src.h src/pub_client_src.c
 	echo "${CROSS_COMPILE}${CC} ${CFLAGS} -c $< -o $@"
 	${CROSS_COMPILE}${CC} ${CFLAGS} -c $< -o $@
 
@@ -51,6 +51,12 @@ crc.o : src/crc.c  include/crc.h
 	${CROSS_COMPILE}${CC} ${CFLAGS} -c $< -o $@ 
 
 ssap_protocol.o : src/ssap_protocol.c  include/ssap_protocol.h
+	${CROSS_COMPILE}${CC} ${CFLAGS} -c $< -o $@ 
+
+utils.o : src/utils.c
+	${CROSS_COMPILE}${CC} ${CFLAGS} -c $< -o $@ 
+
+cJSON.o : src/cJSON.c
 	${CROSS_COMPILE}${CC} ${CFLAGS} -c $< -o $@ 
 
 install : all
